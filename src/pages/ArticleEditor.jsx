@@ -6,7 +6,7 @@ import 'react-quill-new/dist/quill.snow.css';
 import { ArrowDown, ArrowLeft, ArrowUp, CalendarClock, Eye, Loader2, Plus, Trash2, Upload, X } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
-import { slugify, unwrap, uploadImage, PUBLIC_SITE_URL } from '@/lib/helpers';
+import { slugify, unwrap, uploadImage, publicPath, NEWS_CATEGORY, PUBLIC_SITE_URL } from '@/lib/helpers';
 import { Select } from '@/components/ui/select';
 import { fetchAuthors } from '@/pages/AdminAuthors';
 import ScheduleDialog from '@/components/ScheduleDialog';
@@ -45,13 +45,16 @@ const emptyArticle = {
   references: '', faqs: [],
 };
 
-export default function ArticleEditor() {
+// kind="news" edits a news item: the category is fixed to News and the item lives at /news on the site.
+export default function ArticleEditor({ kind = 'articles' }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isEdit = !!id;
+  const isNewsMode = kind === 'news';
+  const listPath = isNewsMode ? '/news' : '/';
 
-  const [form, setForm] = useState(emptyArticle);
+  const [form, setForm] = useState(isNewsMode ? { ...emptyArticle, category: NEWS_CATEGORY } : emptyArticle);
   // The rich-text editor mounts only once the article's content is in the form; content
   // arriving after mount is lost when React re-mounts components in development.
   const [contentReady, setContentReady] = useState(!isEdit);
@@ -77,10 +80,11 @@ export default function ArticleEditor() {
         published_date: toLocalInput(existing.published_date),
         author_id: version.author_id || '',
         faqs: Array.isArray(version.faqs) ? version.faqs : [],
+        ...(isNewsMode ? { category: NEWS_CATEGORY } : {}),
       });
       setContentReady(true);
     }
-  }, [existing]);
+  }, [existing, isNewsMode]);
 
   const { data: authors = [] } = useQuery({ queryKey: ['authors'], queryFn: fetchAuthors });
 
@@ -88,7 +92,7 @@ export default function ArticleEditor() {
     queryKey: ['categories'],
     queryFn: async () => {
       const rows = unwrap(await supabase.from('articles').select('category').neq('category', '').limit(1000));
-      return [...new Set(rows.map((r) => r.category))].sort();
+      return [...new Set(rows.map((r) => r.category))].filter((c) => c !== NEWS_CATEGORY).sort();
     },
   });
   const categories = categoriesRes || [];
@@ -172,7 +176,7 @@ export default function ArticleEditor() {
       featured_image: form.featured_image,
       image_alt: form.image_alt.trim(),
       image_attribution: form.image_attribution.trim(),
-      category: form.category.trim(),
+      category: isNewsMode ? NEWS_CATEGORY : form.category.trim(),
       author_id: form.author_id || null,
       // Keep the plain-text name in sync for older code paths that still read it.
       author: authors.find((a) => a.id === form.author_id)?.name || '',
@@ -217,7 +221,7 @@ export default function ArticleEditor() {
     qc.invalidateQueries({ queryKey: ['admin-article', id] });
     qc.invalidateQueries({ queryKey: ['admin-counts'] });
     qc.invalidateQueries({ queryKey: ['categories'] });
-    navigate('/');
+    navigate(listPath);
   };
 
   // Publish: live immediately. An article that is already live keeps its original publish date.
@@ -287,12 +291,12 @@ export default function ArticleEditor() {
   return (
     <div className="px-5 sm:px-8 py-8 max-w-[1000px]">
       <div className="flex items-center justify-between mb-6">
-        <Link to="/" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> Back to dashboard
+        <Link to={listPath} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" /> {isNewsMode ? 'Back to news' : 'Back to dashboard'}
         </Link>
         <div className="flex items-center gap-2">
           {publishState.label === 'Live' && form.slug && PUBLIC_SITE_URL && (
-            <a href={`${PUBLIC_SITE_URL}/blogs/${form.slug}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-sm border border-border px-3 py-2 text-sm font-medium hover:border-foreground">
+            <a href={`${PUBLIC_SITE_URL}${publicPath(form)}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-sm border border-border px-3 py-2 text-sm font-medium hover:border-foreground">
               <Eye className="h-4 w-4" /> Preview
             </a>
           )}
@@ -305,7 +309,7 @@ export default function ArticleEditor() {
         </div>
       </div>
 
-      <h1 className="font-heading text-2xl font-semibold tracking-tight mb-6">{isEdit ? 'Edit article' : 'New article'}</h1>
+      <h1 className="font-heading text-2xl font-semibold tracking-tight mb-6">{`${isEdit ? 'Edit' : 'New'} ${isNewsMode ? 'news item' : 'article'}`}</h1>
 
       {isLive && pendingUpdateAt && (
         <div className="mb-6 flex flex-col gap-3 rounded-sm border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between">
@@ -335,7 +339,7 @@ export default function ArticleEditor() {
           <div>
             <label className="block text-sm font-medium mb-1.5">URL slug</label>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground hidden sm:inline">/blogs/</span>
+              <span className="text-sm text-muted-foreground hidden sm:inline">/{isNewsMode || form.category.trim() === NEWS_CATEGORY ? 'news' : 'blogs'}/</span>
               <input value={form.slug} onChange={onSlugChange} placeholder="article-slug" className={inputCls} />
             </div>
           </div>
@@ -439,10 +443,16 @@ export default function ArticleEditor() {
             <h3 className="text-sm font-semibold">Organization</h3>
             <div>
               <label className="block text-xs font-medium mb-1.5 text-muted-foreground">Category</label>
-              <input value={form.category} onChange={update('category')} list="category-list" className={inputCls} placeholder="e.g. Lower back pain" />
-              <datalist id="category-list">
-                {categories.map((c) => <option key={c} value={c} />)}
-              </datalist>
+              {isNewsMode ? (
+                <p className="rounded-sm border border-border bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground">News</p>
+              ) : (
+                <>
+                  <input value={form.category} onChange={update('category')} list="category-list" className={inputCls} placeholder="e.g. Lower back pain" />
+                  <datalist id="category-list">
+                    {categories.map((c) => <option key={c} value={c} />)}
+                  </datalist>
+                </>
+              )}
             </div>
             <div>
               <div className="mb-1.5 flex items-center justify-between">

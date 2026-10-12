@@ -5,10 +5,11 @@ import { FilePlus, Pencil, Eye, Trash2, Inbox } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import { formatDate, unwrap, PUBLIC_SITE_URL } from '@/lib/helpers';
+import { formatDate, unwrap, publicPath, NEWS_CATEGORY, PUBLIC_SITE_URL } from '@/lib/helpers';
 
 async function countArticles(status) {
-  let query = supabase.from('articles').select('id', { count: 'exact', head: true });
+  // News items have their own list, so they're left out of the article counts.
+  let query = supabase.from('articles').select('id', { count: 'exact', head: true }).neq('category', NEWS_CATEGORY);
   if (status) query = query.eq('status', status);
   const { count, error } = await query;
   if (error) throw error;
@@ -27,8 +28,27 @@ function articleState(a) {
   return new Date(a.published_date) > new Date() ? 'scheduled' : 'live';
 }
 
-export default function AdminDashboard() {
+// The dashboard lists articles; with kind="news" it lists news items (articles in the News category).
+const KINDS = {
+  articles: {
+    title: 'Dashboard',
+    intro: 'Manage your articles, inquiries, and Write for Us proposals.',
+    heading: 'Articles',
+    noun: 'article',
+    base: '/articles',
+  },
+  news: {
+    title: 'News',
+    intro: 'Short news updates. They appear on the site’s News page, separate from the articles.',
+    heading: 'News items',
+    noun: 'news item',
+    base: '/news',
+  },
+};
+
+export default function AdminDashboard({ kind = 'articles' }) {
   const qc = useQueryClient();
+  const k = KINDS[kind];
 
   const { data: counts } = useQuery({
     queryKey: ['admin-counts'],
@@ -47,15 +67,16 @@ export default function AdminDashboard() {
   });
 
   const { data: articles = [], isLoading } = useQuery({
-    queryKey: ['admin-articles'],
-    queryFn: async () =>
-      unwrap(
-        await supabase
-          .from('articles')
-          .select('id, title, slug, category, status, published_date, scheduled_at')
-          .order('created_at', { ascending: false })
-          .limit(50),
-      ),
+    queryKey: ['admin-articles', kind],
+    queryFn: async () => {
+      let query = supabase
+        .from('articles')
+        .select('id, title, slug, category, status, published_date, scheduled_at')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      query = kind === 'news' ? query.eq('category', NEWS_CATEGORY) : query.neq('category', NEWS_CATEGORY);
+      return unwrap(await query);
+    },
   });
 
   const updateArticle = async (id, changes) => {
@@ -98,32 +119,34 @@ export default function AdminDashboard() {
     <div className="px-5 sm:px-8 py-8 max-w-[1100px]">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="font-heading text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground mt-1">Manage your articles, inquiries, and Write for Us proposals.</p>
+          <h1 className="font-heading text-2xl font-semibold tracking-tight">{k.title}</h1>
+          <p className="text-sm text-muted-foreground mt-1">{k.intro}</p>
         </div>
-        <Link to="/articles/new" className="inline-flex items-center gap-2 rounded-sm bg-foreground px-4 py-2.5 text-sm font-semibold text-background hover:bg-accent transition-colors">
-          <FilePlus className="h-4 w-4" /> New article
+        <Link to={`${k.base}/new`} className="inline-flex items-center gap-2 rounded-sm bg-foreground px-4 py-2.5 text-sm font-semibold text-background hover:bg-accent transition-colors">
+          <FilePlus className="h-4 w-4" /> New {k.noun}
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-10">
-        {stats.map((s) => {
-          const content = (
-            <>
-              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{s.label}</p>
-              <p className="mt-2 font-heading text-3xl font-semibold">{s.value}</p>
-            </>
-          );
-          return s.to ? (
-            <Link key={s.label} to={s.to} className="rounded-sm border border-border bg-white p-5 transition-colors hover:border-accent">{content}</Link>
-          ) : (
-            <div key={s.label} className="rounded-sm border border-border bg-white p-5">{content}</div>
-          );
-        })}
-      </div>
+      {kind === 'articles' && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-10">
+          {stats.map((s) => {
+            const content = (
+              <>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{s.label}</p>
+                <p className="mt-2 font-heading text-3xl font-semibold">{s.value}</p>
+              </>
+            );
+            return s.to ? (
+              <Link key={s.label} to={s.to} className="rounded-sm border border-border bg-white p-5 transition-colors hover:border-accent">{content}</Link>
+            ) : (
+              <div key={s.label} className="rounded-sm border border-border bg-white p-5">{content}</div>
+            );
+          })}
+        </div>
+      )}
 
       <div className="flex items-center justify-between mb-4">
-        <h2 className="font-heading text-xl font-semibold">Articles</h2>
+        <h2 className="font-heading text-xl font-semibold">{k.heading}</h2>
         <Link to="/contact" className="inline-flex items-center gap-2 text-sm font-medium text-accent hover:underline">
           <Inbox className="h-4 w-4" /> Inquiries
         </Link>
@@ -134,17 +157,17 @@ export default function AdminDashboard() {
           <div className="p-8 text-center text-muted-foreground text-sm">Loading…</div>
         ) : articles.length === 0 ? (
           <div className="p-10 text-center">
-            <p className="text-muted-foreground">No articles yet.</p>
-            <Link to="/articles/new" className="mt-3 inline-block text-sm font-semibold text-accent">Create your first article</Link>
+            <p className="text-muted-foreground">No {k.noun}s yet.</p>
+            <Link to={`${k.base}/new`} className="mt-3 inline-block text-sm font-semibold text-accent">Create your first {k.noun}</Link>
           </div>
         ) : (
           <ul className="divide-y divide-border">
             {articles.map((a) => (
               <li key={a.id} className="flex items-center gap-4 px-4 sm:px-5 py-3.5">
                 <div className="min-w-0 flex-1">
-                  <Link to={`/articles/${a.id}/edit`} className="block truncate font-medium text-foreground hover:text-accent transition-colors">{a.title}</Link>
+                  <Link to={`${k.base}/${a.id}/edit`} className="block truncate font-medium text-foreground hover:text-accent transition-colors">{a.title}</Link>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {a.category ? `${a.category} · ` : ''}{articleState(a) === 'scheduled' ? `Scheduled for ${new Date(a.published_date).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}` : formatDate(a.published_date) || 'Not published'}{articleState(a) === 'live' && a.scheduled_at ? ` · Update scheduled for ${new Date(a.scheduled_at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}` : ''}
+                    {a.category && kind === 'articles' ? `${a.category} · ` : ''}{articleState(a) === 'scheduled' ? `Scheduled for ${new Date(a.published_date).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}` : formatDate(a.published_date) || 'Not published'}{articleState(a) === 'live' && a.scheduled_at ? ` · Update scheduled for ${new Date(a.scheduled_at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}` : ''}
                   </p>
                 </div>
                 <span className={`hidden sm:inline-block shrink-0 rounded-sm border px-2 py-0.5 text-xs font-medium capitalize ${statusStyles[articleState(a)]}`}>{articleState(a)}</span>
@@ -157,11 +180,11 @@ export default function AdminDashboard() {
                     {{ live: 'Unpublish', scheduled: 'Cancel schedule', draft: 'Publish' }[articleState(a)]}
                   </button>
                   {articleState(a) === 'live' && PUBLIC_SITE_URL && (
-                    <a href={`${PUBLIC_SITE_URL}/blogs/${a.slug}`} target="_blank" rel="noopener noreferrer" title="View" className="p-2 rounded-sm hover:bg-muted text-muted-foreground">
+                    <a href={`${PUBLIC_SITE_URL}${publicPath(a)}`} target="_blank" rel="noopener noreferrer" title="View" className="p-2 rounded-sm hover:bg-muted text-muted-foreground">
                       <Eye className="h-4 w-4" />
                     </a>
                   )}
-                  <Link to={`/articles/${a.id}/edit`} title="Edit" className="p-2 rounded-sm hover:bg-muted text-muted-foreground">
+                  <Link to={`${k.base}/${a.id}/edit`} title="Edit" className="p-2 rounded-sm hover:bg-muted text-muted-foreground">
                     <Pencil className="h-4 w-4" />
                   </Link>
                   <button onClick={() => setPendingDelete(a)} title="Delete" className="p-2 rounded-sm hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
@@ -177,9 +200,9 @@ export default function AdminDashboard() {
       <ConfirmDialog
         open={!!pendingDelete}
         onOpenChange={(open) => { if (!open) setPendingDelete(null); }}
-        title="Delete this article?"
+        title={`Delete this ${k.noun}?`}
         description={pendingDelete && <>“{pendingDelete.title}” will be permanently deleted{pendingDelete.status === 'published' ? ' and removed from the live site' : ''}. This cannot be undone.</>}
-        confirmLabel="Delete article"
+        confirmLabel={`Delete ${k.noun}`}
         onConfirm={() => remove(pendingDelete)}
       />
     </div>

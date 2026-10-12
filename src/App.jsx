@@ -34,6 +34,9 @@ export default function App() {
               <Route path="/" element={<AdminDashboard />} />
               <Route path="/articles/new" element={<Suspense fallback={null}><ArticleEditor /></Suspense>} />
               <Route path="/articles/:id/edit" element={<Suspense fallback={null}><ArticleEditor /></Suspense>} />
+              <Route path="/news" element={<AdminDashboard kind="news" />} />
+              <Route path="/news/new" element={<Suspense fallback={null}><ArticleEditor kind="news" /></Suspense>} />
+              <Route path="/news/:id/edit" element={<Suspense fallback={null}><ArticleEditor kind="news" /></Suspense>} />
               <Route path="/contact" element={<AdminContact />} />
               <Route path="/guest-posts" element={<AdminGuestPosts />} />
               <Route path="/authors" element={<AdminAuthors />} />

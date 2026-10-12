@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, FilePlus, Inbox, PenLine, Users, LogOut, Menu, X } from 'lucide-react';
+import { LayoutDashboard, FilePlus, Newspaper, Inbox, PenLine, Users, LogOut, Menu, X } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/articles/new', label: 'New article', icon: FilePlus },
+  { to: '/news', label: 'News', icon: Newspaper },
   { to: '/authors', label: 'Authors', icon: Users },
   { to: '/contact', label: 'Inquiries', icon: Inbox },
   { to: '/guest-posts', label: 'Write for us', icon: PenLine },
