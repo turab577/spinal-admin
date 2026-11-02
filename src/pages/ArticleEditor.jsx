@@ -10,6 +10,7 @@ import { slugify, unwrap, uploadImage, publicPath, NEWS_CATEGORY, PUBLIC_SITE_UR
 import { Select } from '@/components/ui/select';
 import { fetchAuthors } from '@/pages/AdminAuthors';
 import ScheduleDialog from '@/components/ScheduleDialog';
+import { normalizePastedHtml, FONT_SIZES } from '@/lib/pasteHtml';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
 function toLocalInput(iso) {
@@ -103,11 +104,11 @@ class LinkRelModule {
 }
 Quill.register('modules/linkRel', LinkRelModule, true);
 
-// Everything pasted content can carry is kept: tables, images, underline, strikethrough,
-// superscript/subscript and code. Only pasted colours, fonts and sizes (e.g. from Google Docs)
-// are dropped, so articles use the site's own typography.
+// Everything pasted content can carry is kept: tables, images, font sizes, underline,
+// strikethrough, superscript/subscript and code. Only pasted colours and fonts (e.g. from Google
+// Docs) are dropped, so articles use the site's own colours and typefaces.
 const EDITOR_FORMATS = [
-  'header', 'bold', 'italic', 'underline', 'strike', 'script', 'code', 'list', 'indent', 'blockquote',
+  'header', 'size', 'bold', 'italic', 'underline', 'strike', 'script', 'code', 'list', 'indent', 'blockquote',
   'code-block', 'link', 'nofollow', 'image', 'align', 'table', 'table-row', 'table-body', 'table-container',
 ];
 
@@ -148,6 +149,21 @@ function rehostImages(quill) {
     }
   });
 }
+
+// Font size: saved as an inline style (e.g. font-size: 18px) so the site shows it as written.
+const SizeStyle = Quill.import('attributors/style/size');
+SizeStyle.whitelist = FONT_SIZES;
+Quill.register(SizeStyle, true);
+
+// Keeps numbered headings, nested list items and font sizes from Google Docs (see lib/pasteHtml).
+const Clipboard = Quill.import('modules/clipboard');
+class PasteClipboard extends Clipboard {
+  normalizeHTML(doc) {
+    super.normalizeHTML(doc);
+    normalizePastedHtml(doc);
+  }
+}
+Quill.register('modules/clipboard', PasteClipboard, true);
 
 // Pasted text often uses non-breaking spaces, which stop lines wrapping on the site.
 const plainSpaces = (node, delta) => {
@@ -193,10 +209,54 @@ function applyHeader(quill, value) {
   quill.setSelection(start, end - start, 'user');
 }
 
+// List buttons. A Quill line is a heading or a list item, never both, so on heading lines the
+// number ("1. ") or bullet ("• ") is written in front of the heading instead, the same way
+// numbered headings pasted from Google Docs come in. Headings are numbered in sequence with the
+// previous same-level heading, restarting after a higher-level one. Clicking again removes it.
+const HEADING_PREFIX = { ordered: /^\d+\.\s/, bullet: /^•\s/ };
+
+function nextHeadingNumber(quill, line) {
+  const level = line.formats().header;
+  for (let prev = line.prev; prev; prev = prev.prev) {
+    const prevLevel = prev.formats?.().header;
+    if (!prevLevel) continue;
+    if (prevLevel < level) break;
+    if (prevLevel === level) {
+      const match = /^(\d+)\.\s/.exec(quill.getText(quill.getIndex(prev), prev.length()));
+      return match ? Number(match[1]) + 1 : 1;
+    }
+  }
+  return 1;
+}
+
+function applyList(quill, value) {
+  const range = quill.getSelection(true);
+  const lines = quill.getLines(range.index, Math.max(range.length, 1));
+  const headings = lines.filter((line) => line.formats().header);
+  if (!headings.length) {
+    quill.format('list', value, 'user');
+    return;
+  }
+  const type = value || 'ordered';
+  const textOf = (line) => quill.getText(quill.getIndex(line), line.length());
+  const remove = headings.every((line) => HEADING_PREFIX[type].test(textOf(line)));
+  headings.forEach((line) => {
+    const index = quill.getIndex(line);
+    const text = textOf(line);
+    // Drop any existing number or bullet first, so switching between the two works.
+    const existing = /^(\d+\.|•)\s/.exec(text);
+    if (existing) quill.deleteText(index, existing[0].length, 'user');
+    if (!remove) quill.insertText(index, type === 'ordered' ? `${nextHeadingNumber(quill, line)}. ` : '• ', 'user');
+  });
+  lines.filter((line) => !line.formats().header).forEach((line) => {
+    quill.formatLine(quill.getIndex(line), 1, 'list', value, 'user');
+  });
+}
+
 // Clear formatting. Quill's built-in version does nothing visible without a selection and
 // deletes images inside one, so instead strip every format, from the current line when
 // nothing is selected, and leave images alone.
-const INLINE_FORMATS = ['bold', 'italic', 'underline', 'strike', 'script', 'code', 'link', 'nofollow'];
+const INLINE_FORMATS = ['size', 'bold', 'italic', 'underline', 'strike', 'script', 'code', 'link', 'nofollow'];
 const BLOCK_FORMATS = ['header', 'list', 'indent', 'blockquote', 'code-block', 'align'];
 const unset = (names) => Object.fromEntries(names.map((name) => [name, false]));
 function clearFormatting(quill) {
@@ -210,7 +270,9 @@ function clearFormatting(quill) {
 // Hover labels for the toolbar, which has none by default.
 const TOOLBAR_TITLES = {
   '.ql-header .ql-picker-label': 'Text style',
+  '.ql-size .ql-picker-label': 'Font size',
   '.ql-bold': 'Bold',
+  '.ql-underline': 'Underline',
   '.ql-italic': 'Italic',
   '.ql-list[value="ordered"]': 'Numbered list',
   '.ql-list[value="bullet"]': 'Bulleted list',
@@ -334,7 +396,9 @@ export default function ArticleEditor({ kind = 'articles' }) {
     toolbar: {
       container: [
         [{ header: [1, 2, 3, 4, 5, 6, false] }],
-        ['bold', 'italic'],
+        // false = no size set, the article's default 18px; listed in its place between 16 and 20.
+        [{ size: [...FONT_SIZES.filter((z) => parseFloat(z) < 18), false, ...FONT_SIZES.filter((z) => parseFloat(z) > 18)] }],
+        ['bold', 'italic', 'underline'],
         [{ list: 'ordered' }, { list: 'bullet' }],
         ['blockquote'],
         ['link', 'image'],
@@ -344,6 +408,7 @@ export default function ArticleEditor({ kind = 'articles' }) {
       handlers: {
         image: imageHandler,
         header(value) { applyHeader(this.quill, value); },
+        list(value) { applyList(this.quill, value); },
         clean() { clearFormatting(this.quill); },
       },
     },
