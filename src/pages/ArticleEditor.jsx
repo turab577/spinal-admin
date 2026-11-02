@@ -88,17 +88,66 @@ function addRelSelect(quill) {
 }
 
 // Runs for every editor Quill creates. The theme builds the link box alongside the toolbar
-// module, so wait for it if this module happens to be created first.
+// module, so wait for it if this module happens to be created first. Also moves pasted images
+// to the media bucket after each edit.
 class LinkRelModule {
   constructor(quill) {
     const init = () => (quill.theme.tooltip ? addRelSelect(quill) : setTimeout(init));
     init();
+    quill.on('text-change', (delta, oldDelta, source) => {
+      if (source === 'user' && delta.ops.some((op) => op.insert?.image)) rehostImages(quill);
+    });
+    // Images already in an article being edited.
+    setTimeout(() => rehostImages(quill));
   }
 }
 Quill.register('modules/linkRel', LinkRelModule, true);
 
-// Only what the toolbar offers. Pasted colours, fonts and sizes (e.g. from Google Docs) are dropped.
-const EDITOR_FORMATS = ['header', 'bold', 'italic', 'list', 'indent', 'blockquote', 'link', 'nofollow', 'image', 'align'];
+// Everything pasted content can carry is kept: tables, images, underline, strikethrough,
+// superscript/subscript and code. Only pasted colours, fonts and sizes (e.g. from Google Docs)
+// are dropped, so articles use the site's own typography.
+const EDITOR_FORMATS = [
+  'header', 'bold', 'italic', 'underline', 'strike', 'script', 'code', 'list', 'indent', 'blockquote',
+  'code-block', 'link', 'nofollow', 'image', 'align', 'table', 'table-row', 'table-body', 'table-container',
+];
+
+// Pasted or dropped images are moved to the media bucket, so articles never depend on base64 data
+// or on another site's copy (e.g. a Google Docs image link, which stops working later).
+const isHostedImage = (src) => src.includes('/storage/v1/object/public/media/');
+
+async function rehostImage(src) {
+  const response = await fetch(src);
+  if (!response.ok) throw new Error(`Image fetch failed: ${response.status}`);
+  const blob = await response.blob();
+  if (!blob.type.startsWith('image/')) throw new Error('Not an image');
+  const ext = blob.type.split('/')[1].replace('jpeg', 'jpg').replace(/\+.*$/, '');
+  return uploadImage(new File([blob], `pasted.${ext}`, { type: blob.type }));
+}
+
+// Swaps every image in the editor that isn't in the media bucket yet for an uploaded copy.
+// An image that can't be fetched (the other site blocks it) keeps its original link.
+const rehosting = new Set();
+function rehostImages(quill) {
+  quill.root.querySelectorAll('img').forEach(async (img) => {
+    const src = img.getAttribute('src') || '';
+    if (!src || isHostedImage(src) || rehosting.has(src)) return;
+    rehosting.add(src);
+    try {
+      const url = await rehostImage(src);
+      const blot = Quill.find(img);
+      if (!blot || !img.isConnected) return;
+      const index = quill.getIndex(blot);
+      const formats = quill.getFormat(index, 1);
+      quill.deleteText(index, 1, 'api');
+      quill.insertEmbed(index, 'image', url, 'api');
+      if (formats.align) quill.formatLine(index, 1, 'align', formats.align, 'api');
+    } catch (err) {
+      console.warn('Could not copy pasted image to media storage; keeping its original link.', src, err);
+    } finally {
+      rehosting.delete(src);
+    }
+  });
+}
 
 // Pasted text often uses non-breaking spaces, which stop lines wrapping on the site.
 const plainSpaces = (node, delta) => {
@@ -147,8 +196,8 @@ function applyHeader(quill, value) {
 // Clear formatting. Quill's built-in version does nothing visible without a selection and
 // deletes images inside one, so instead strip every format, from the current line when
 // nothing is selected, and leave images alone.
-const INLINE_FORMATS = ['bold', 'italic', 'link', 'nofollow'];
-const BLOCK_FORMATS = ['header', 'list', 'indent', 'blockquote', 'align'];
+const INLINE_FORMATS = ['bold', 'italic', 'underline', 'strike', 'script', 'code', 'link', 'nofollow'];
+const BLOCK_FORMATS = ['header', 'list', 'indent', 'blockquote', 'code-block', 'align'];
 const unset = (names) => Object.fromEntries(names.map((name) => [name, false]));
 function clearFormatting(quill) {
   const range = quill.getSelection(true);
@@ -299,6 +348,22 @@ export default function ArticleEditor({ kind = 'articles' }) {
       },
     },
     clipboard: { matchers: [[Node.TEXT_NODE, plainSpaces]] },
+    table: true,
+    // Image files pasted or dropped into the editor (e.g. screenshots) upload straight to media.
+    uploader: {
+      mimetypes: ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'],
+      async handler(range, files) {
+        for (const [i, file] of files.entries()) {
+          try {
+            this.quill.insertEmbed(range.index + i, 'image', await uploadImage(file), 'user');
+          } catch (err) {
+            console.error(err);
+            alert('Image upload failed. Please try again.');
+          }
+        }
+        this.quill.setSelection(range.index + files.length, 0, 'silent');
+      },
+    },
     linkRel: true,
   }), []);
 
