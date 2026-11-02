@@ -1,2 +1,5 @@
+# Crawling is allowed on purpose: every response carries `X-Robots-Tag: noindex` (next.config.mjs)
+# and pages also have a noindex meta tag. Search engines only obey noindex on pages they can
+# fetch, so blocking them here would let admin URLs show up in results as bare links.
 User-agent: *
-Disallow: /
+Allow: /
