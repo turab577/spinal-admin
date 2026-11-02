@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, Reply, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { formatDate, gmailComposeUrl, unwrap } from '@/lib/helpers';
 import { Select } from '@/components/ui/select';
 
@@ -41,10 +42,11 @@ export default function AdminGuestPosts() {
     refresh();
   };
 
+  // Proposal awaiting delete confirmation (null when the dialog is closed).
+  const [pendingDelete, setPendingDelete] = useState(null);
   const remove = async (proposal) => {
-    if (!confirm(`Delete the proposal from ${proposal.name}? This cannot be undone.`)) return;
     const { error } = await supabase.from('guest_post_submissions').delete().eq('id', proposal.id);
-    if (error) alert(error.message);
+    if (error) throw error;
     refresh();
   };
 
@@ -105,7 +107,7 @@ export default function AdminGuestPosts() {
                     >
                       <Reply className="h-4 w-4" />
                     </a>
-                    <button onClick={() => remove(p)} title="Delete" className="p-2 rounded-sm hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
+                    <button onClick={() => setPendingDelete(p)} title="Delete" className="p-2 rounded-sm hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -135,6 +137,15 @@ export default function AdminGuestPosts() {
           </ul>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => { if (!open) setPendingDelete(null); }}
+        title="Delete this proposal?"
+        description={pendingDelete && <>The proposal from {pendingDelete.name} will be permanently deleted. This cannot be undone.</>}
+        confirmLabel="Delete proposal"
+        onConfirm={() => remove(pendingDelete)}
+      />
     </div>
   );
 }

@@ -2,12 +2,21 @@ import React, { useState } from 'react';
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 
+const tones = {
+  // Delete, unpublish and other actions that remove something.
+  destructive: { iconCls: 'bg-destructive/10 text-destructive', buttonCls: 'bg-destructive text-destructive-foreground hover:opacity-90' },
+  // Publishing and other actions that are significant but not destructive.
+  default: { iconCls: 'bg-accent/10 text-accent', buttonCls: 'bg-foreground text-background hover:bg-accent' },
+};
+
 /**
- * Themed confirmation modal for destructive actions.
+ * Themed confirmation modal. `tone` is 'destructive' (default) or 'default'; `icon` overrides
+ * the warning icon.
  * `onConfirm` may be async; the dialog shows a spinner and stays open until it finishes,
  * and shows the error message if it throws.
  */
-export default function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel = 'Delete', onConfirm }) {
+export default function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel = 'Delete', onConfirm, tone = 'destructive', icon: Icon = AlertTriangle }) {
+  const { iconCls, buttonCls } = tones[tone];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -39,8 +48,8 @@ export default function ConfirmDialog({ open, onOpenChange, title, description, 
           className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2.5rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-sm border border-border bg-white p-6 shadow-[0_24px_64px_-24px_rgba(11,16,24,0.45)] focus:outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
         >
           <div className="flex gap-4">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-              <AlertTriangle className="h-5 w-5" />
+            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${iconCls}`}>
+              <Icon className="h-5 w-5" />
             </span>
             <div className="min-w-0">
               <AlertDialog.Title className="font-heading text-lg font-semibold leading-snug">{title}</AlertDialog.Title>
@@ -60,7 +69,7 @@ export default function ConfirmDialog({ open, onOpenChange, title, description, 
             <AlertDialog.Action
               onClick={confirm}
               disabled={busy}
-              className="inline-flex items-center gap-2 rounded-sm bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+              className={`inline-flex items-center gap-2 rounded-sm px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-60 ${buttonCls}`}
             >
               {busy && <Loader2 className="h-4 w-4 animate-spin" />}
               {confirmLabel}

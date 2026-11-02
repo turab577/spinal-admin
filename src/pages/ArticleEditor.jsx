@@ -3,13 +3,14 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import ReactQuill, { Quill } from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
-import { ArrowDown, ArrowLeft, ArrowUp, CalendarClock, Eye, Loader2, Plus, Trash2, Upload, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, CalendarClock, CalendarX, Eye, Globe, Loader2, Plus, Trash2, Upload, X } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
 import { slugify, unwrap, uploadImage, publicPath, NEWS_CATEGORY, PUBLIC_SITE_URL } from '@/lib/helpers';
 import { Select } from '@/components/ui/select';
 import { fetchAuthors } from '@/pages/AdminAuthors';
 import ScheduleDialog from '@/components/ScheduleDialog';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 function toLocalInput(iso) {
   if (!iso) return '';
@@ -35,6 +36,81 @@ class ExternalLink extends QuillLink {
   }
 }
 Quill.register(ExternalLink, true);
+
+// Only what the toolbar offers. Pasted colours, fonts and sizes (e.g. from Google Docs) are dropped.
+const EDITOR_FORMATS = ['header', 'bold', 'italic', 'list', 'indent', 'blockquote', 'link', 'image', 'align'];
+
+// Pasted text often uses non-breaking spaces, which stop lines wrapping on the site.
+const plainSpaces = (node, delta) => {
+  delta.ops.forEach((op) => {
+    if (typeof op.insert === 'string') op.insert = op.insert.replace(/\u00a0/g, ' ');
+  });
+  return delta;
+};
+
+// Quill stores a heading on the whole paragraph, so switching style while typing would restyle
+// everything written before it. Instead:
+// - cursor at the end of a line: start a new line in the chosen style and keep the text above as is;
+// - selection: split off the selected text so only it changes;
+// - cursor elsewhere in a line: restyle that line, as in Word or Google Docs.
+function applyHeader(quill, value) {
+  const header = value || false;
+  const range = quill.getSelection(true);
+  if (range.length === 0) {
+    const [line, offset] = quill.getLine(range.index);
+    const textLength = line.length() - 1;
+    if (textLength > 0 && offset === textLength) {
+      quill.insertText(range.index, '\n', line.formats(), 'user');
+      quill.formatLine(range.index + 1, 0, 'header', header, 'user');
+      quill.setSelection(range.index + 1, 0, 'user');
+    } else {
+      quill.formatLine(range.index, 0, 'header', header, 'user');
+    }
+    return;
+  }
+  let start = range.index;
+  let end = range.index + range.length;
+  // Split after the selection first, so `start` stays valid.
+  const [endLine, endOffset] = quill.getLine(end);
+  if (endOffset === 0) end -= 1;
+  else if (endOffset < endLine.length() - 1) quill.insertText(end, '\n', endLine.formats(), 'user');
+  const [startLine, startOffset] = quill.getLine(start);
+  if (startOffset > 0) {
+    quill.insertText(start, '\n', startLine.formats(), 'user');
+    start += 1;
+    end += 1;
+  }
+  quill.formatLine(start, end - start, 'header', header, 'user');
+  quill.setSelection(start, end - start, 'user');
+}
+
+// Clear formatting. Quill's built-in version does nothing visible without a selection and
+// deletes images inside one, so instead strip every format, from the current line when
+// nothing is selected, and leave images alone.
+const INLINE_FORMATS = ['bold', 'italic', 'link'];
+const BLOCK_FORMATS = ['header', 'list', 'indent', 'blockquote', 'align'];
+const unset = (names) => Object.fromEntries(names.map((name) => [name, false]));
+function clearFormatting(quill) {
+  const range = quill.getSelection(true);
+  const [line, offset] = quill.getLine(range.index);
+  const { index, length } = range.length ? range : { index: range.index - offset, length: line.length() - 1 };
+  quill.formatLine(index, length, unset(BLOCK_FORMATS), 'user');
+  quill.formatText(index, length, unset(INLINE_FORMATS), 'user');
+}
+
+// Hover labels for the toolbar, which has none by default.
+const TOOLBAR_TITLES = {
+  '.ql-header .ql-picker-label': 'Text style',
+  '.ql-bold': 'Bold',
+  '.ql-italic': 'Italic',
+  '.ql-list[value="ordered"]': 'Numbered list',
+  '.ql-list[value="bullet"]': 'Bulleted list',
+  '.ql-blockquote': 'Quote',
+  '.ql-link': 'Link',
+  '.ql-image': 'Insert image',
+  '.ql-align .ql-picker-label': 'Alignment',
+  '.ql-clean': 'Clear formatting',
+};
 
 // Radix Select can't use an empty value, so "no author" gets a sentinel.
 const NO_AUTHOR = '__none__';
@@ -117,10 +193,13 @@ export default function ArticleEditor({ kind = 'articles' }) {
     const title = e.target.value;
     setForm((f) => ({ ...f, title, slug: slugTouched ? f.slug : slugify(title) }));
   };
+  // Light cleanup while typing so hyphens can be typed; the full slugify runs on blur and on save.
   const onSlugChange = (e) => {
     setSlugTouched(true);
-    setForm((f) => ({ ...f, slug: slugify(e.target.value) }));
+    const slug = e.target.value.toLowerCase().replace(/[\s_]+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-{2,}/g, '-');
+    setForm((f) => ({ ...f, slug }));
   };
+  const onSlugBlur = () => setForm((f) => ({ ...f, slug: slugify(f.slug) }));
 
   const imageHandler = () => {
     const input = document.createElement('input');
@@ -145,7 +224,7 @@ export default function ArticleEditor({ kind = 'articles' }) {
   const modules = useMemo(() => ({
     toolbar: {
       container: [
-        [{ header: [1, 2, 3, false] }],
+        [{ header: [1, 2, 3, 4, 5, 6, false] }],
         ['bold', 'italic'],
         [{ list: 'ordered' }, { list: 'bullet' }],
         ['blockquote'],
@@ -153,9 +232,23 @@ export default function ArticleEditor({ kind = 'articles' }) {
         [{ align: [] }],
         ['clean'],
       ],
-      handlers: { image: imageHandler },
+      handlers: {
+        image: imageHandler,
+        header(value) { applyHeader(this.quill, value); },
+        clean() { clearFormatting(this.quill); },
+      },
     },
+    clipboard: { matchers: [[Node.TEXT_NODE, plainSpaces]] },
   }), []);
+
+  useEffect(() => {
+    // `.editor` rather than getEditor(), which throws while the editor is being (re)created.
+    const toolbar = quillRef.current?.editor?.getModule('toolbar')?.container;
+    if (!toolbar) return;
+    Object.entries(TOOLBAR_TITLES).forEach(([selector, title]) => {
+      toolbar.querySelectorAll(selector).forEach((el) => el.setAttribute('title', title));
+    });
+  }, [contentReady]);
 
   const uploadFeatured = async (file) => {
     try {
@@ -170,9 +263,10 @@ export default function ArticleEditor({ kind = 'articles' }) {
   const buildPayload = (override = {}) => {
     const payload = {
       title: form.title.trim(),
-      slug: form.slug.trim(),
+      slug: slugify(form.slug),
       excerpt: form.excerpt.trim(),
-      body: form.body,
+      // Quill 2 exports every space as &nbsp;, which stops lines wrapping on the site.
+      body: form.body.replace(/&nbsp;/g, ' '),
       featured_image: form.featured_image,
       image_alt: form.image_alt.trim(),
       image_attribution: form.image_attribution.trim(),
@@ -200,9 +294,9 @@ export default function ArticleEditor({ kind = 'articles' }) {
   // Returns an error message, or '' when the article can be saved.
   const validate = async () => {
     if (!form.title.trim()) return 'A title is required.';
-    if (!form.slug.trim()) return 'A URL slug is required.';
-    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(form.slug)) return 'Slug may only contain lowercase letters, numbers, and hyphens.';
-    if (!(await checkSlugUnique(form.slug))) return 'That slug is already in use. Choose another.';
+    const slug = slugify(form.slug);
+    if (!slug) return 'A URL slug is required.';
+    if (!(await checkSlugUnique(slug))) return 'That slug is already in use. Choose another.';
     return '';
   };
 
@@ -225,25 +319,24 @@ export default function ArticleEditor({ kind = 'articles' }) {
   };
 
   // Publish: live immediately. An article that is already live keeps its original publish date.
-  const publishNow = async () => {
+  // Applying edits now also drops any pending scheduled update.
+  const publishNow = () =>
+    persist({
+      ...buildPayload(),
+      ...(isLive ? {} : { status: 'published', published_date: new Date().toISOString() }),
+      scheduled_changes: null,
+      scheduled_at: null,
+    });
+
+  // Publish: validate first, then confirm in a dialog.
+  const [publishOpen, setPublishOpen] = useState(false);
+  const openPublish = async () => {
     setError('');
-    const problem = await validate();
-    if (problem) { setError(problem); return; }
     setSaving('publish');
-    try {
-      // Applying edits now also drops any pending scheduled update. A live article keeps its publish date.
-      await persist({
-        ...buildPayload(),
-        ...(isLive ? {} : { status: 'published', published_date: new Date().toISOString() }),
-        scheduled_changes: null,
-        scheduled_at: null,
-      });
-    } catch (err) {
-      console.error(err);
-      setError(err?.message || 'Failed to publish the article.');
-    } finally {
-      setSaving(null);
-    }
+    const problem = await validate();
+    setSaving(null);
+    if (problem) { setError(problem); return; }
+    setPublishOpen(true);
   };
 
   // Live article: keep the live version and store these edits to apply at `when`.
@@ -253,12 +346,10 @@ export default function ArticleEditor({ kind = 'articles' }) {
       ? { scheduled_changes: buildPayload(), scheduled_at: when }
       : { ...buildPayload(), status: 'published', published_date: when, scheduled_changes: null, scheduled_at: null });
 
-  const [discarding, setDiscarding] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const discardScheduledUpdate = async () => {
-    setDiscarding(true);
     const { error: discardError } = await supabase.from('articles').update({ scheduled_changes: null, scheduled_at: null }).eq('id', id);
-    setDiscarding(false);
-    if (discardError) { setError(discardError.message); return; }
+    if (discardError) throw discardError;
     qc.invalidateQueries({ queryKey: ['admin-articles'] });
     await qc.invalidateQueries({ queryKey: ['admin-article', id] });
   };
@@ -282,6 +373,9 @@ export default function ArticleEditor({ kind = 'articles' }) {
       ? { label: 'Scheduled', text: `Goes live ${new Date(liveDate).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}.`, cls: 'bg-amber-50 text-amber-700 border-amber-200' }
       : { label: 'Live', text: `Published ${new Date(liveDate).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}.${pendingUpdateAt ? ` Update scheduled for ${new Date(pendingUpdateAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}.` : ''}`, cls: 'bg-accent/10 text-accent border-accent/20' };
 
+  const noun = isNewsMode ? 'news item' : 'article';
+  const formatWhen = (date) => new Date(date).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+
   if (isEdit && isLoading) {
     return <div className="p-12 text-center text-muted-foreground">Loading editor…</div>;
   }
@@ -303,7 +397,7 @@ export default function ArticleEditor({ kind = 'articles' }) {
           <button onClick={openSchedule} disabled={!!saving} className="inline-flex items-center gap-2 rounded-sm border border-border px-4 py-2 text-sm font-semibold hover:border-foreground disabled:opacity-60">
             {saving === 'schedule' ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarClock className="h-4 w-4" />} Schedule
           </button>
-          <button onClick={publishNow} disabled={!!saving} className="inline-flex items-center gap-2 rounded-sm bg-foreground px-4 py-2 text-sm font-semibold text-background hover:bg-accent disabled:opacity-60">
+          <button onClick={openPublish} disabled={!!saving} className="inline-flex items-center gap-2 rounded-sm bg-foreground px-4 py-2 text-sm font-semibold text-background hover:bg-accent disabled:opacity-60">
             {saving === 'publish' ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Publish
           </button>
         </div>
@@ -319,11 +413,10 @@ export default function ArticleEditor({ kind = 'articles' }) {
           </p>
           <button
             type="button"
-            onClick={discardScheduledUpdate}
-            disabled={discarding}
-            className="shrink-0 inline-flex items-center gap-2 rounded-sm border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 hover:border-amber-500 disabled:opacity-60"
+            onClick={() => setDiscardOpen(true)}
+            className="shrink-0 inline-flex items-center gap-2 rounded-sm border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 hover:border-amber-500"
           >
-            {discarding && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Discard scheduled update
+            Discard scheduled update
           </button>
         </div>
       )}
@@ -339,8 +432,8 @@ export default function ArticleEditor({ kind = 'articles' }) {
           <div>
             <label className="block text-sm font-medium mb-1.5">URL slug</label>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground hidden sm:inline">/{isNewsMode || form.category.trim() === NEWS_CATEGORY ? 'news' : 'blogs'}/</span>
-              <input value={form.slug} onChange={onSlugChange} placeholder="article-slug" className={inputCls} />
+              <span className="text-sm text-muted-foreground hidden sm:inline">/{isNewsMode || form.category.trim() === NEWS_CATEGORY ? 'news' : 'articles'}/</span>
+              <input value={form.slug} onChange={onSlugChange} onBlur={onSlugBlur} placeholder="article-slug" className={inputCls} />
             </div>
           </div>
           <div>
@@ -356,8 +449,11 @@ export default function ArticleEditor({ kind = 'articles' }) {
                   ref={quillRef}
                   theme="snow"
                   value={form.body}
+                  // Store exactly what Quill emits. Changing it here makes Quill reload the whole
+                  // document on every keystroke, which eats typed spaces and merges lines.
                   onChange={(v) => setForm((f) => ({ ...f, body: v }))}
                   modules={modules}
+                  formats={EDITOR_FORMATS}
                   placeholder="Write your article…"
                 />
               ) : (
@@ -487,6 +583,29 @@ export default function ArticleEditor({ kind = 'articles' }) {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={publishOpen}
+        onOpenChange={setPublishOpen}
+        tone="default"
+        icon={Globe}
+        title={isLive ? `Update the live ${noun}?` : `Publish this ${noun}?`}
+        description={isLive
+          ? <>Your changes will replace the version readers see on the site right now.{pendingUpdateAt && ` The update scheduled for ${formatWhen(pendingUpdateAt)} will be dropped.`}</>
+          : <>“{form.title.trim()}” will go live on the site immediately and be visible to everyone.{publishState.label === 'Scheduled' && ` It will no longer wait until ${formatWhen(liveDate)}.`}</>}
+        confirmLabel={isLive ? 'Update now' : 'Publish now'}
+        onConfirm={publishNow}
+      />
+
+      <ConfirmDialog
+        open={discardOpen}
+        onOpenChange={setDiscardOpen}
+        icon={CalendarX}
+        title="Discard the scheduled update?"
+        description={<>The changes set to go live on {pendingUpdateAt && formatWhen(pendingUpdateAt)} will be deleted. The live version stays as it is. This cannot be undone.</>}
+        confirmLabel="Discard update"
+        onConfirm={discardScheduledUpdate}
+      />
 
       <ScheduleDialog
         open={scheduleOpen}

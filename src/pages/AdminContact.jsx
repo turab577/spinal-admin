@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, Mail, MailOpen, Reply, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { formatDate, gmailComposeUrl, unwrap } from '@/lib/helpers';
 
 const FILTERS = [
@@ -46,10 +47,11 @@ export default function AdminContact() {
     if (msg.status === 'new') setStatus(msg, 'read');
   };
 
+  // Message awaiting delete confirmation (null when the dialog is closed).
+  const [pendingDelete, setPendingDelete] = useState(null);
   const remove = async (msg) => {
-    if (!confirm(`Delete the message from ${msg.name}? This cannot be undone.`)) return;
     const { error } = await supabase.from('contact_submissions').delete().eq('id', msg.id);
-    if (error) alert(error.message);
+    if (error) throw error;
     refresh();
   };
 
@@ -115,7 +117,7 @@ export default function AdminContact() {
                         <Archive className="h-4 w-4" />
                       </button>
                     )}
-                    <button onClick={() => remove(m)} title="Delete" className="p-2 rounded-sm hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
+                    <button onClick={() => setPendingDelete(m)} title="Delete" className="p-2 rounded-sm hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -130,6 +132,15 @@ export default function AdminContact() {
           </ul>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => { if (!open) setPendingDelete(null); }}
+        title="Delete this message?"
+        description={pendingDelete && <>The message from {pendingDelete.name} will be permanently deleted. This cannot be undone.</>}
+        confirmLabel="Delete message"
+        onConfirm={() => remove(pendingDelete)}
+      />
     </div>
   );
 }

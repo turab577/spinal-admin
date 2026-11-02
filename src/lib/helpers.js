@@ -3,13 +3,13 @@ import { supabase } from '@/lib/supabase';
 export const PUBLIC_SITE_URL = (process.env.NEXT_PUBLIC_PUBLIC_SITE_URL || '').replace(/\/$/, '');
 
 // News items are articles filed under this category. The public site shows them at /news
-// and keeps them out of the article archive at /blogs.
+// and keeps them out of the article archive at /articles.
 export const NEWS_CATEGORY = 'News';
 
 export const isNews = (article) => article?.category === NEWS_CATEGORY;
 
 /** Path of an article on the public site. */
-export const publicPath = (article) => `/${isNews(article) ? 'news' : 'blogs'}/${article.slug}`;
+export const publicPath = (article) => `/${isNews(article) ? 'news' : 'articles'}/${article.slug}`;
 
 /** Throws the Supabase error, otherwise returns the data. */
 export function unwrap({ data, error }) {

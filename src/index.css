@@ -195,26 +195,124 @@
 }
 
 /* Rich text editor */
-.quill-wrapper .ql-toolbar.ql-snow {
+/* Article editor box: one bordered card with a toolbar that stays in view while writing. */
+.quill-wrapper .quill {
   border: 1px solid hsl(var(--border));
-  border-bottom: 0;
-  border-radius: 0.25rem 0.25rem 0 0;
+  border-radius: 0.375rem;
   background: #fff;
+  box-shadow: 0 1px 2px hsl(216 36% 11% / 0.04);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
+.quill-wrapper .quill:focus-within {
+  border-color: hsl(var(--accent));
+  box-shadow: 0 0 0 3px hsl(var(--accent) / 0.12);
+}
+.quill-wrapper .ql-toolbar.ql-snow {
+  position: sticky;
+  top: 3.5rem; /* below the mobile top bar */
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  border: 0;
+  border-bottom: 1px solid hsl(var(--border));
+  border-radius: 0.375rem 0.375rem 0 0;
+  background: hsl(36 40% 98% / 0.96);
+  backdrop-filter: blur(6px);
+  padding: 0.5rem 0.625rem;
+  font-family: var(--font-body);
+}
+@media (min-width: 1024px) {
+  .quill-wrapper .ql-toolbar.ql-snow { top: 0; }
+}
+.quill-wrapper .ql-toolbar.ql-snow .ql-formats {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 0;
+  padding-right: 0.375rem;
+  border-right: 1px solid hsl(var(--border));
+}
+.quill-wrapper .ql-toolbar.ql-snow .ql-formats:last-child { border-right: 0; }
+.quill-wrapper .ql-toolbar.ql-snow button {
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+  border-radius: 0.25rem;
+}
+.quill-wrapper .ql-toolbar.ql-snow button:hover,
+.quill-wrapper .ql-toolbar.ql-snow .ql-picker-label:hover { background: hsl(var(--muted)); }
+.quill-wrapper .ql-toolbar.ql-snow button.ql-active { background: hsl(var(--accent) / 0.12); }
+.quill-wrapper .ql-snow.ql-toolbar button:hover .ql-stroke,
+.quill-wrapper .ql-snow.ql-toolbar button.ql-active .ql-stroke,
+.quill-wrapper .ql-snow.ql-toolbar .ql-picker-label:hover .ql-stroke,
+.quill-wrapper .ql-snow.ql-toolbar .ql-picker-label.ql-active .ql-stroke { stroke: hsl(var(--accent)); }
+.quill-wrapper .ql-snow.ql-toolbar button:hover .ql-fill,
+.quill-wrapper .ql-snow.ql-toolbar button.ql-active .ql-fill,
+.quill-wrapper .ql-snow.ql-toolbar .ql-picker-label:hover .ql-fill,
+.quill-wrapper .ql-snow.ql-toolbar .ql-picker-label.ql-active .ql-fill { fill: hsl(var(--accent)); }
+.quill-wrapper .ql-snow.ql-toolbar button:hover,
+.quill-wrapper .ql-snow.ql-toolbar button.ql-active,
+.quill-wrapper .ql-snow.ql-toolbar .ql-picker-label:hover,
+.quill-wrapper .ql-snow.ql-toolbar .ql-picker-label.ql-active,
+.quill-wrapper .ql-snow.ql-toolbar .ql-picker-item:hover,
+.quill-wrapper .ql-snow.ql-toolbar .ql-picker-item.ql-selected { color: hsl(var(--accent)); }
+.quill-wrapper .ql-snow .ql-picker { height: 30px; font-size: 0.8125rem; color: hsl(var(--foreground)); }
+.quill-wrapper .ql-snow .ql-picker.ql-header { width: 112px; }
+.quill-wrapper .ql-snow .ql-picker-label { border-radius: 0.25rem; padding-left: 0.5rem; }
+.quill-wrapper .ql-snow .ql-picker.ql-expanded .ql-picker-label { border-color: hsl(var(--border)); }
+.quill-wrapper .ql-snow .ql-picker-options {
+  border: 1px solid hsl(var(--border)) !important;
+  border-radius: 0.375rem;
+  box-shadow: 0 8px 24px hsl(216 36% 11% / 0.12);
+  padding: 0.375rem;
+}
+.quill-wrapper .ql-snow .ql-picker-item { padding: 0.25rem 0.5rem; border-radius: 0.25rem; }
+.quill-wrapper .ql-snow .ql-picker-item:hover { background: hsl(var(--muted)); }
+.quill-wrapper .ql-snow .ql-picker.ql-header .ql-picker-item[data-value="4"]::before { font-size: 1.05em; }
+.quill-wrapper .ql-snow .ql-picker.ql-header .ql-picker-item[data-value="5"]::before { font-size: 0.95em; }
+.quill-wrapper .ql-snow .ql-picker.ql-header .ql-picker-item[data-value="6"]::before { font-size: 0.8em; }
 .quill-wrapper .ql-container.ql-snow {
-  border: 1px solid hsl(var(--border));
-  border-radius: 0 0 0.25rem 0.25rem;
-  background: #fff;
+  border: 0;
+  border-radius: 0 0 0.375rem 0.375rem;
   font-family: var(--font-body);
   font-size: 1.0625rem;
-  min-height: 360px;
+  min-height: 420px;
 }
-.quill-wrapper .ql-editor { line-height: 1.7; padding: 1rem 1.25rem; }
-.quill-wrapper .ql-editor h1 { font-size: 1.7rem; }
-.quill-wrapper .ql-editor h2 { font-size: 1.4rem; }
-.quill-wrapper .ql-editor h3 { font-size: 1.2rem; }
+.quill-wrapper .ql-editor {
+  min-height: 420px;
+  line-height: 1.75;
+  padding: 1.5rem 1.75rem;
+  color: hsl(216 14% 22%);
+  overflow-wrap: break-word;
+}
+.quill-wrapper .ql-editor.ql-blank::before { left: 1.75rem; right: 1.75rem; font-style: normal; color: hsl(var(--muted-foreground) / 0.7); }
+.quill-wrapper .ql-editor > * + * { margin-top: 0.75em; }
+.quill-wrapper .ql-editor h1,
+.quill-wrapper .ql-editor h2,
+.quill-wrapper .ql-editor h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.25; color: hsl(var(--foreground)); }
+.quill-wrapper .ql-editor h1 { font-size: 1.9rem; margin-top: 1.2em; }
+.quill-wrapper .ql-editor h2 { font-size: 1.55rem; margin-top: 1.2em; }
+.quill-wrapper .ql-editor h3 { font-size: 1.25rem; margin-top: 1em; }
+.quill-wrapper .ql-editor h4 { font-size: 1.05rem; font-weight: 600; margin-top: 1em; }
+.quill-wrapper .ql-editor h5 { font-size: 1rem; font-weight: 600; margin-top: 1em; }
+.quill-wrapper .ql-editor h6 { font-size: 0.8rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: hsl(var(--muted-foreground)); margin-top: 1em; }
+.quill-wrapper .ql-editor a { color: hsl(var(--accent)); text-decoration: underline; text-underline-offset: 3px; }
+.quill-wrapper .ql-editor blockquote {
+  border-left: 2px solid hsl(var(--accent));
+  padding-left: 1rem;
+  font-family: var(--font-heading);
+  font-style: italic;
+  color: hsl(var(--foreground));
+}
 .quill-wrapper .ql-editor img { max-width: 100%; border-radius: 0.25rem; }
-.quill-wrapper .ql-tooltip { z-index: 10; }
+.quill-wrapper .ql-tooltip {
+  z-index: 30;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.375rem;
+  box-shadow: 0 8px 24px hsl(216 36% 11% / 0.12);
+  color: hsl(var(--foreground));
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

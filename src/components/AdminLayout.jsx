@@ -40,7 +40,7 @@ export default function AdminLayout() {
   const sidebar = (
     <div className="flex h-full flex-col">
       <div className="px-5 py-5">
-        <img src="/logo-light.svg" alt="SpinalInfo" width="1012" height="552" className="h-14 w-auto" />
+        <img src="/logo-light.svg" alt="SpinalInfo" width="923" height="500" className="h-14 w-auto" />
         <p className="mt-1 text-xs uppercase tracking-widest text-stone-500">Admin</p>
       </div>
       <nav className="flex-1 space-y-1 px-3">
@@ -65,7 +65,7 @@ export default function AdminLayout() {
 
       <div className="lg:hidden sticky top-0 z-40 flex h-14 items-center justify-between bg-[#121A26] px-4">
         <p className="flex items-center gap-2">
-          <img src="/logo-light.svg" alt="SpinalInfo" width="1012" height="552" className="h-10 w-auto" />
+          <img src="/logo-light.svg" alt="SpinalInfo" width="923" height="500" className="h-10 w-auto" />
           <span className="text-xs uppercase tracking-widest text-stone-400">Admin</span>
         </p>
         <button onClick={() => setOpen(true)} className="p-2 text-white" aria-label="Open menu" aria-expanded={open}>

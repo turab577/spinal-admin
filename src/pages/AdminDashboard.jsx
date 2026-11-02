@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FilePlus, Pencil, Eye, Trash2, Inbox } from 'lucide-react';
+import { FilePlus, Pencil, Eye, Trash2, Inbox, Globe, EyeOff, CalendarX } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
 import ConfirmDialog from '@/components/ConfirmDialog';
@@ -81,9 +81,11 @@ export default function AdminDashboard({ kind = 'articles' }) {
 
   const updateArticle = async (id, changes) => {
     const { error } = await supabase.from('articles').update(changes).eq('id', id);
-    if (error) alert(error.message);
+    if (error) throw error;
   };
 
+  // Article awaiting publish/unpublish confirmation (null when the dialog is closed).
+  const [pendingToggle, setPendingToggle] = useState(null);
   // Live → Unpublish (back to draft). Scheduled → Cancel schedule (back to draft, time cleared).
   // Draft → Publish now.
   const togglePublish = async (article) => {
@@ -173,7 +175,7 @@ export default function AdminDashboard({ kind = 'articles' }) {
                 <span className={`hidden sm:inline-block shrink-0 rounded-sm border px-2 py-0.5 text-xs font-medium capitalize ${statusStyles[articleState(a)]}`}>{articleState(a)}</span>
                 <div className="flex items-center gap-1 shrink-0">
                   <button
-                    onClick={() => togglePublish(a)}
+                    onClick={() => setPendingToggle(a)}
                     title={{ live: 'Take this article off the site', scheduled: 'Cancel the scheduled publish', draft: 'Publish now' }[articleState(a)]}
                     className="p-2 rounded-sm hover:bg-muted text-muted-foreground"
                   >
@@ -196,6 +198,33 @@ export default function AdminDashboard({ kind = 'articles' }) {
           </ul>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!pendingToggle}
+        onOpenChange={(open) => { if (!open) setPendingToggle(null); }}
+        onConfirm={() => togglePublish(pendingToggle)}
+        {...(pendingToggle && {
+          live: {
+            title: `Unpublish this ${k.noun}?`,
+            description: <>“{pendingToggle.title}” will be taken off the live site and moved back to drafts. You can publish it again at any time.</>,
+            confirmLabel: 'Unpublish',
+            icon: EyeOff,
+          },
+          scheduled: {
+            title: 'Cancel the scheduled publish?',
+            description: <>“{pendingToggle.title}” will not go live on {new Date(pendingToggle.published_date).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}. It moves back to drafts.</>,
+            confirmLabel: 'Cancel schedule',
+            icon: CalendarX,
+          },
+          draft: {
+            title: `Publish this ${k.noun}?`,
+            description: <>“{pendingToggle.title}” will go live on the site immediately and be visible to everyone.</>,
+            confirmLabel: 'Publish now',
+            tone: 'default',
+            icon: Globe,
+          },
+        }[articleState(pendingToggle)])}
+      />
 
       <ConfirmDialog
         open={!!pendingDelete}
