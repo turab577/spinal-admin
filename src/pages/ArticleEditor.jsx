@@ -37,8 +37,68 @@ class ExternalLink extends QuillLink {
 }
 Quill.register(ExternalLink, true);
 
+// Links are dofollow by default. The link box has a Dofollow / Nofollow choice; nofollow links are
+// saved with rel="nofollow", which the public site keeps. Any rel containing nofollow (e.g. pasted
+// "nofollow noopener") is read as nofollow.
+const { Attributor, Scope } = Quill.import('parchment');
+class NofollowAttributor extends Attributor {
+  value(node) {
+    return /(^|\s)nofollow(\s|$)/.test(node.getAttribute('rel') || '') ? 'nofollow' : '';
+  }
+}
+Quill.register('formats/nofollow', new NofollowAttributor('nofollow', 'rel', { scope: Scope.INLINE, whitelist: ['nofollow'] }), true);
+
+// Adds the Dofollow / Nofollow select to Quill's link box. While adding or editing a link the
+// choice is applied on Save; on an existing link's preview it applies straight away.
+function addRelSelect(quill) {
+  const tooltip = quill.theme.tooltip;
+  if (tooltip.relSelect) return;
+  const select = document.createElement('select');
+  select.className = 'ql-rel';
+  select.title = 'Dofollow or nofollow';
+  select.innerHTML = '<option value="dofollow">Dofollow</option><option value="nofollow">Nofollow</option>';
+  tooltip.textbox.after(select);
+  tooltip.relSelect = select;
+
+  const apply = (range) => {
+    if (range) quill.formatText(range.index, range.length, 'nofollow', select.value === 'nofollow' ? 'nofollow' : false, 'user');
+  };
+  const sync = (range) => {
+    select.value = range && quill.getFormat(range.index, range.length).nofollow ? 'nofollow' : 'dofollow';
+  };
+  select.addEventListener('change', () => {
+    if (!tooltip.root.classList.contains('ql-editing')) apply(tooltip.linkRange);
+  });
+
+  const { show, edit, save } = tooltip;
+  tooltip.show = function () {
+    show.call(this);
+    sync(this.linkRange);
+  };
+  tooltip.edit = function (mode, preview) {
+    edit.call(this, mode, preview);
+    sync(this.linkRange || quill.selection.savedRange);
+  };
+  tooltip.save = function () {
+    const linking = this.root.getAttribute('data-mode') === 'link' && this.textbox.value.trim();
+    const range = this.linkRange || quill.selection.savedRange;
+    save.call(this);
+    if (linking) apply(range);
+  };
+}
+
+// Runs for every editor Quill creates. The theme builds the link box alongside the toolbar
+// module, so wait for it if this module happens to be created first.
+class LinkRelModule {
+  constructor(quill) {
+    const init = () => (quill.theme.tooltip ? addRelSelect(quill) : setTimeout(init));
+    init();
+  }
+}
+Quill.register('modules/linkRel', LinkRelModule, true);
+
 // Only what the toolbar offers. Pasted colours, fonts and sizes (e.g. from Google Docs) are dropped.
-const EDITOR_FORMATS = ['header', 'bold', 'italic', 'list', 'indent', 'blockquote', 'link', 'image', 'align'];
+const EDITOR_FORMATS = ['header', 'bold', 'italic', 'list', 'indent', 'blockquote', 'link', 'nofollow', 'image', 'align'];
 
 // Pasted text often uses non-breaking spaces, which stop lines wrapping on the site.
 const plainSpaces = (node, delta) => {
@@ -87,7 +147,7 @@ function applyHeader(quill, value) {
 // Clear formatting. Quill's built-in version does nothing visible without a selection and
 // deletes images inside one, so instead strip every format, from the current line when
 // nothing is selected, and leave images alone.
-const INLINE_FORMATS = ['bold', 'italic', 'link'];
+const INLINE_FORMATS = ['bold', 'italic', 'link', 'nofollow'];
 const BLOCK_FORMATS = ['header', 'list', 'indent', 'blockquote', 'align'];
 const unset = (names) => Object.fromEntries(names.map((name) => [name, false]));
 function clearFormatting(quill) {
@@ -239,6 +299,7 @@ export default function ArticleEditor({ kind = 'articles' }) {
       },
     },
     clipboard: { matchers: [[Node.TEXT_NODE, plainSpaces]] },
+    linkRel: true,
   }), []);
 
   useEffect(() => {
