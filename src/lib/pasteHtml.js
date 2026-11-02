@@ -70,6 +70,12 @@ function nestByAriaLevel(doc) {
   });
 }
 
+// Google Docs styles the list number through the list item (e.g. a bold "1." puts font-weight:700
+// on the <li>). Quill would apply that to the whole item, so only the text's own styles count.
+function dropListItemStyles(doc) {
+  doc.querySelectorAll('li[style]').forEach((li) => li.removeAttribute('style'));
+}
+
 // Font sizes the editor offers (the size dropdown). Pasted sizes snap to the nearest one.
 // Article text is 18px by default (the site's .article-content), so 18px is "no size set" and
 // isn't stored.
@@ -111,5 +117,6 @@ function keepFontSizes(doc) {
 export function normalizePastedHtml(doc) {
   liftListHeadings(doc);
   nestByAriaLevel(doc);
+  dropListItemStyles(doc);
   keepFontSizes(doc);
 }
